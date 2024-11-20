@@ -1,0 +1,57 @@
+#!/usr/sbin/nft -f
+flush ruleset
+table ip my_nat {
+  chain my_filter {
+    type filter hook prerouting priority -150; policy accept;
+    iif lo accept;
+
+    iifname eth1 jump my_input_public;
+    iifname eth2 jump my_input_public;
+    iifname eth0 ip daddr 172.17.0.0/16 jump local_sys;
+    meta mark set ct mark;
+    #ct state new counter queue num 0 comment "Queue monitor must be running..."
+    ct state new meta mark set numgen random mod 10 map { 0-3: 100, 4-10: 101 } comment "Without Queue monitor..."
+
+    ct mark set meta mark;
+    counter comment "<- Pre routing";
+  }
+  chain my_input_public {
+    ct state {established,related} counter accept;
+    ct state invalid log level alert prefix "Incoming invalid:" counter drop;
+    ct state new log level alert prefix "Incoming:" counter drop;
+  }
+  chain local_sys {
+    ct state {established,related} counter accept
+    ct state invalid counter drop
+    ct state new log counter accept;
+  }
+  chain output {
+    type filter hook output priority filter;
+    ct state {established,related} counter accept
+    ip saddr 192.168.29.2 ct state new meta mark set 100 counter;
+    ip saddr 192.168.0.109 ct state new meta mark set 101 counter;
+    meta mark eq 0 ct state new meta mark set numgen random mod 2 map { 0: 100, 1: 101 } counter; # assign either one for locally initiated connections
+
+    ip daddr 127.0.0.1 ct state new meta mark set 50 counter;
+    ip daddr 172.17.0.0/16 ct state new meta mark set 50 counter;
+    ct mark set meta mark;
+  }
+  chain my_postrouting {
+    type nat hook postrouting priority -100;
+    ct mark set meta mark;
+    counter comment "<- Post routing";
+    meta mark > 50 jump my_snat_postrouting;
+    counter comment "<- Post routing";
+    meta mark eq 50 accept;
+    log counter drop;
+  }
+  chain my_snat_postrouting {
+    counter comment "<- Out Post routing";
+    meta mark eq 100 counter;
+    meta mark eq 101 counter;
+    meta mark eq 100 snat to 192.168.29.2;
+    meta mark eq 101 snat to 192.168.0.109;
+    log counter drop;
+    #snat to mark map {  100 : 192.168.29.2, 101 : 192.168.0.109 };
+  }
+}
