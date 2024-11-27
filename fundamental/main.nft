@@ -39,10 +39,10 @@ table ip mangle {
     ct state {established,related} meta mark set ct mark counter accept;
     # 负载均衡
     # meta mark eq 0 ct state new meta mark set numgen random mod 10 map { 0-4: 100, 5-9: 101 } counter;
-    # meta mark eq 0 ct state new meta mark set numgen random mod 2 map { 0: 100, 1: 101 } counter;
+    meta mark eq 0 ct state new meta mark set numgen random mod 2 map { 0: 100, 1: 101 } counter;
     # 根据目标地址分配出口
-    meta mark eq 0 ct state new ip daddr {192.168.23.73,} meta mark set 100;
-    meta mark eq 0 ct state new ip daddr {192.168.23.201,} meta mark set 101;
+    # meta mark eq 0 ct state new ip daddr {192.168.23.73,} meta mark set 100;
+    # meta mark eq 0 ct state new ip daddr {192.168.23.201,} meta mark set 101;
     ip daddr 127.0.0.1/8 ct state new meta mark set 50 counter; # 放过所有lo地址
     ip daddr 192.168.2.0/24 ct state new meta mark set 50 counter; # 放过所有LAN地址
     ct mark set meta mark;
