@@ -1,6 +1,7 @@
 package gomwan
 
 import (
+	"fmt"
 	"net"
 	"time"
 
@@ -14,16 +15,14 @@ type ReachabilityCheckResult struct {
 }
 
 type ReachabilityCheck struct {
-	InterfaceName       []string
-	MustBeReachableIps  []net.IP
-	BuiltInReachableIps []net.IP
+	InterfaceName      []string
+	MustBeReachableIps []net.IP
 }
 
-func NewReachabilityCheck(infNames []string, must, builtin []net.IP) *ReachabilityCheck {
+func NewReachabilityCheck(infNames []string, must []net.IP) *ReachabilityCheck {
 	return &ReachabilityCheck{
-		InterfaceName:       infNames,
-		BuiltInReachableIps: builtin,
-		MustBeReachableIps:  must,
+		InterfaceName:      infNames,
+		MustBeReachableIps: must,
 	}
 }
 
@@ -36,11 +35,6 @@ func (r *ReachabilityCheck) IsReachable() []ReachabilityCheckResult {
 				reachableResult.MustBeReachableLost++
 			}
 		}
-		for _, ip := range r.BuiltInReachableIps {
-			if !r.ping(ip, infname) {
-				reachableResult.BuiltInLost++
-			}
-		}
 		reachableResults = append(reachableResults, reachableResult)
 	}
 	return reachableResults
@@ -51,12 +45,15 @@ func (r *ReachabilityCheck) ping(ip net.IP, infName string) bool {
 	if err != nil {
 		return false
 	}
-	pinger.Interval = 10 * time.Millisecond // 10ms between packets
+	pinger.SetPrivileged(true)
+	pinger.Interval = 100 * time.Millisecond // 10ms between packets
 	pinger.Timeout = 2 * time.Second
 	pinger.InterfaceName = infName
+	pinger.SetMark(49)
 	pinger.Count = 3
 	err = pinger.Run() // Blocks until finished.
 	if err != nil {
+		fmt.Println(err)
 		return false
 	}
 	stats := pinger.Statistics()

@@ -126,7 +126,7 @@ func (n *MWan) OutputRules() error {
 		}
 		rules = append(rules, rule)
 	}
-	if n.LoadBalancingType == Weight {
+	if n.LoadBalancingType == Weight || n.LoadBalancingType == AccessibilityPrimaryAndSecondary {
 		aSet := GetAnAnonymousSet(n.GetTable(), nftables.TypeInteger)
 		aSet.DataType = nftables.TypeMark
 		aSet.IsMap = true
@@ -134,6 +134,9 @@ func (n *MWan) OutputRules() error {
 		elements := []nftables.SetElement{}
 		initialW := 0
 		for i, wan := range n.Interfaces.FindWans() {
+			if wan.InitialWeight == 0 {
+				continue
+			}
 			s1 := initialW
 			s2 := s1 + int(wan.InitialWeight*100)
 			initialW = s2
@@ -381,6 +384,23 @@ func (n *MWan) POSTROUTINGRules() error {
 					Kind:  expr.VerdictJump,
 					Chain: "mwan_snat_postrouting",
 				},
+			},
+		}
+		rules = append(rules, rule)
+	}
+	// meta mark 0x00000031 accept
+	{
+		rule := &nftables.Rule{
+			Table: table,
+			Chain: chains,
+			Exprs: []expr.Any{
+				&expr.Meta{Key: 3, SourceRegister: false, Register: 1},
+				&expr.Cmp{
+					Op:       expr.CmpOpEq,
+					Register: 1,
+					Data:     binaryutil.PutInt32(49),
+				},
+				&expr.Verdict{Kind: expr.VerdictAccept},
 			},
 		}
 		rules = append(rules, rule)
@@ -758,11 +778,11 @@ func (n *MWan) FilterRules() error {
 						Offset:         16,
 						Len:            4,
 					},
-					// &expr.Cmp{
-					// 	Op:       expr.CmpOpEq,
-					// 	Register: 1,
-					// 	Data:     net.ParseIP(lan.IP.String()).To4(),
-					// },
+					&expr.Cmp{
+						Op:       expr.CmpOpEq,
+						Register: 1,
+						Data:     net.ParseIP(lan.IP.String()).To4(),
+					},
 					&expr.Verdict{
 						Kind:  expr.VerdictJump,
 						Chain: "mwan_local_sys",
@@ -852,11 +872,14 @@ func (n *MWan) FilterRules() error {
 					SourceRegister: true,
 					Register:       1,
 				},
+				&expr.Log{
+					Level: 4,
+				},
 			},
 		}
 		rules = append(rules, rule)
 	}
-	if n.LoadBalancingType == Weight {
+	if n.LoadBalancingType == Weight || n.LoadBalancingType == AccessibilityPrimaryAndSecondary {
 		aSet := GetAnAnonymousSet(n.GetTable(), nftables.TypeInteger)
 		aSet.DataType = nftables.TypeMark
 		aSet.IsMap = true
@@ -864,6 +887,9 @@ func (n *MWan) FilterRules() error {
 		elements := []nftables.SetElement{}
 		initialW := 0
 		for i, wan := range n.Interfaces.FindWans() {
+			if wan.InitialWeight == 0 {
+				continue
+			}
 			s1 := initialW
 			s2 := s1 + int(wan.InitialWeight*100)
 			initialW = s2

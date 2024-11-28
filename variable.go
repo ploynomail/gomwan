@@ -1,17 +1,17 @@
 package gomwan
 
-import "net"
+import (
+	"fmt"
+	"net"
+)
 
 type LoadBalancingType int
 
 const (
 	// Random load balancing
 	Random                           LoadBalancingType = iota // Select the egress WAN based on the random number modulo the number of WAN cards
+	Weight                                                    // Determine the egress WAN network card based on the Weight of the traffic
 	AccessibilityPrimaryAndSecondary                          // Determine the egress WAN network card based on target reachability
-	// Destination                                               // Determine the egress WAN network card based on the destination IP address
-	// DestinationSource                                         // Determine the egress WAN network card based on the destination IP address and source IP address
-	// Source                                                    // Determine the egress WAN network card based on the source IP address
-	Weight // Determine the egress WAN network card based on the Weight of the traffic
 )
 
 type InterfaceType int
@@ -28,9 +28,14 @@ type Interface struct {
 	Mask          net.IPMask
 	Gateway       net.IP
 	InitialWeight float32
+	Primary       bool
 }
 
-type Interfaces []Interface
+type Interfaces []*Interface
+
+func (inf *Interface) String() string {
+	return inf.Name + " " + inf.IP.String() + "/" + inf.Mask.String() + " " + inf.Gateway.String() + " " + fmt.Sprintf("%f", inf.InitialWeight)
+}
 
 func (ifs Interfaces) Len() int {
 	return len(ifs)
@@ -42,6 +47,23 @@ func (ifs Interfaces) Less(i, j int) bool {
 
 func (ifs Interfaces) Swap(i, j int) {
 	ifs[i], ifs[j] = ifs[j], ifs[i]
+}
+
+func (ifs Interfaces) Names() []string {
+	var names []string
+	for _, inf := range ifs {
+		names = append(names, inf.Name)
+	}
+	return names
+}
+
+func (ifs Interfaces) FindByName(name string) *Interface {
+	for _, inf := range ifs {
+		if inf.Name == name {
+			return inf
+		}
+	}
+	return nil
 }
 
 func (ifs Interfaces) FindWans() Interfaces {
@@ -76,17 +98,6 @@ type Variable struct {
 	MustBeReachableIps []net.IP
 }
 
-var (
-	// BuiltInReachableIps is a list of IP addresses that must be reachable
-	builtInReachableIps = []net.IP{
-		net.IPv4(8, 8, 8, 8),
-		net.IPv4(8, 8, 4, 4),
-		net.IPv4(1, 1, 1, 1),
-		net.IPv4(223, 5, 5, 5),
-		net.IPv4(223, 6, 6, 6),
-	}
-)
-
 func NewVariable(interfaces Interfaces, lb LoadBalancingType, must []net.IP) (*Variable, error) {
 	if len(interfaces) == 0 {
 		return nil, ErrEmptyInterfaces
@@ -98,20 +109,24 @@ func NewVariable(interfaces Interfaces, lb LoadBalancingType, must []net.IP) (*V
 		return nil, err
 	}
 	if lb == AccessibilityPrimaryAndSecondary && len(must) == 0 {
+		if len(interfaces.FindWans()) != 2 {
+			return nil, ErrAccessibilityPrimaryAndSecondaryMustBeTwoWans
+		}
 		return nil, ErrNoMustBeReachableIps
+	} else if lb == AccessibilityPrimaryAndSecondary && len(must) != 0 {
+		findPrimary := false
+		for _, ifs := range interfaces {
+			if ifs.Primary && ifs.InfType == WAN {
+				findPrimary = true
+				ifs.InitialWeight = 1
+			} else {
+				ifs.InitialWeight = 0
+			}
+		}
+		if !findPrimary {
+			return nil, ErrAccessibilityPrimaryAndSecondaryMustBePrimary
+		}
 	}
-	// if lb == Destination && len(dest) == 0 {
-	// 	return nil, ErrDestinationIps
-	// }
-	// if lb == DestinationSource && (len(dest) == 0 || len(source) == 0) {
-	// 	return nil, ErrDestinationSourceIps
-	// }
-	// if lb == Source && len(source) == 0 {
-	// 	return nil, ErrSourceIps
-	// }
-	// if interfaces.FindLans().Len() == 0 {
-	// 	return nil, ErrNoLans
-	// }
 	return &Variable{
 		Interfaces:         interfaces,
 		LoadBalancingType:  lb,

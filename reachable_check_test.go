@@ -14,14 +14,7 @@ func TestNewReachabilityCheck(t *testing.T) {
 	must := []net.IP{
 		net.IPv4(8, 8, 8, 8),
 	}
-	builtin := []net.IP{
-		net.IPv4(8, 8, 8, 8),
-		net.IPv4(8, 8, 4, 4),
-		net.IPv4(1, 1, 1, 1),
-		net.IPv4(223, 5, 5, 5),
-		net.IPv4(223, 6, 6, 6),
-	}
-	rc := NewReachabilityCheck([]string{"eth0"}, must, builtin)
+	rc := NewReachabilityCheck([]string{"eth0"}, must)
 	reachable := rc.IsReachable()
 	if reachable[0] != result {
 		t.Errorf("Expected %v, got %v", result, reachable[0])
