@@ -96,9 +96,11 @@ type Variable struct {
 	Interfaces         Interfaces
 	LoadBalancingType  LoadBalancingType
 	MustBeReachableIps []net.IP
+	OtherAllowNetworks []net.IPNet
+	AllowProtocols     []int
 }
 
-func NewVariable(interfaces Interfaces, lb LoadBalancingType, must []net.IP) (*Variable, error) {
+func NewVariable(interfaces Interfaces, lb LoadBalancingType, must []net.IP, allowNet []net.IPNet, allowProto []int) (*Variable, error) {
 	if len(interfaces) == 0 {
 		return nil, ErrEmptyInterfaces
 	}
@@ -131,5 +133,7 @@ func NewVariable(interfaces Interfaces, lb LoadBalancingType, must []net.IP) (*V
 		Interfaces:         interfaces,
 		LoadBalancingType:  lb,
 		MustBeReachableIps: must,
+		OtherAllowNetworks: allowNet,
+		AllowProtocols:     allowProto,
 	}, nil
 }

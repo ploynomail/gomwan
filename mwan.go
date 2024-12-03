@@ -17,6 +17,8 @@ type MWan struct {
 	MustBeReachableIps []net.IP
 	DestinationIps     []net.IP
 	SourceIps          []net.IP
+	OtherAllowNetworks []net.IPNet
+	AllowProtocols     []int
 	Conn               *nftables.Conn
 }
 
@@ -37,6 +39,9 @@ func (n *MWan) SetVariable(variable *Variable) {
 	n.Interfaces = variable.Interfaces
 	n.LoadBalancingType = variable.LoadBalancingType
 	n.MustBeReachableIps = variable.MustBeReachableIps
+	n.OtherAllowNetworks = variable.OtherAllowNetworks
+	n.AllowProtocols = variable.AllowProtocols
+
 }
 
 func (n *MWan) Close() error {

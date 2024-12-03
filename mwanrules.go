@@ -21,9 +21,9 @@ func (n *MWan) OutputRules() error {
 		)
 		aSet.Interval = false
 		n.Conn.AddSet(aSet, []nftables.SetElement{
-			{
-				Key: binaryutil.PutInt32(int32(expr.CtStateBitESTABLISHED)),
-			},
+			// {
+			// 	Key: binaryutil.PutInt32(int32(expr.CtStateBitESTABLISHED)),
+			// },
 			{
 				Key: binaryutil.PutInt32(int32(expr.CtStateBitRELATED)),
 			},
@@ -240,16 +240,6 @@ func (n *MWan) OutputRules() error {
 					DestRegister:   0,
 					SetID:          aSet.ID,
 				},
-				&expr.Ct{
-					Register:       1,
-					SourceRegister: false,
-					Key:            0,
-				},
-				&expr.Cmp{
-					Op:       expr.CmpOpEq,
-					Register: 1,
-					Data:     binaryutil.PutInt32(int32(expr.CtStateBitNEW)),
-				},
 				&expr.Immediate{
 					Register: 1,
 					Data:     []byte{0x32},
@@ -263,7 +253,6 @@ func (n *MWan) OutputRules() error {
 		}
 		rules = append(rules, rule)
 	}
-	// ip daddr 192.168.2.0/24 ct state new meta mark set 50 counter; # 放过所有LAN地址
 	{
 		aSet := GetAnAnonymousSet(
 			n.GetTable(), nftables.TypeIPAddr,
@@ -275,6 +264,19 @@ func (n *MWan) OutputRules() error {
 				IP:   lan.IP,
 				Mask: lan.Mask,
 			})
+			startIP, endIp, _ := GetStartAndEndIp(ipstr)
+			elements = append(elements, []nftables.SetElement{
+				{
+					Key: startIP.To4(),
+				},
+				{
+					Key:         incrementIP(endIp).To4(),
+					IntervalEnd: true,
+				},
+			}...)
+		}
+		for _, net := range n.OtherAllowNetworks {
+			ipstr := ipMaskTOCRDI(net)
 			startIP, endIp, _ := GetStartAndEndIp(ipstr)
 			elements = append(elements, []nftables.SetElement{
 				{
@@ -311,15 +313,124 @@ func (n *MWan) OutputRules() error {
 					DestRegister:   0,
 					SetID:          aSet.ID,
 				},
-				&expr.Ct{
-					Register:       1,
-					SourceRegister: false,
-					Key:            0,
-				},
-				&expr.Cmp{
-					Op:       expr.CmpOpEq,
+				&expr.Immediate{
 					Register: 1,
-					Data:     binaryutil.PutInt32(int32(expr.CtStateBitNEW)),
+					Data:     []byte{0x32},
+				},
+				&expr.Meta{
+					Key:            3,
+					SourceRegister: true,
+					Register:       1,
+				},
+			},
+		}
+		rules = append(rules, rule)
+	}
+	{
+		aSet := GetAnAnonymousSet(
+			n.GetTable(), nftables.TypeIPAddr,
+		)
+		aSet.Interval = true
+		var elements = []nftables.SetElement{}
+		for _, lan := range n.Interfaces.FindLans() {
+			ipstr := ipMaskTOCRDI(net.IPNet{
+				IP:   lan.IP,
+				Mask: lan.Mask,
+			})
+			startIP, endIp, _ := GetStartAndEndIp(ipstr)
+			elements = append(elements, []nftables.SetElement{
+				{
+					Key: startIP.To4(),
+				},
+				{
+					Key:         incrementIP(endIp).To4(),
+					IntervalEnd: true,
+				},
+			}...)
+		}
+		for _, net := range n.OtherAllowNetworks {
+			ipstr := ipMaskTOCRDI(net)
+			startIP, endIp, _ := GetStartAndEndIp(ipstr)
+			elements = append(elements, []nftables.SetElement{
+				{
+					Key: startIP.To4(),
+				},
+				{
+					Key:         incrementIP(endIp).To4(),
+					IntervalEnd: true,
+				},
+			}...)
+		}
+		elements = append(elements, []nftables.SetElement{
+			{
+				Key:         []byte{0, 0, 0, 9},
+				IntervalEnd: true,
+			},
+		}...)
+		n.Conn.AddSet(aSet, elements)
+		rule := &nftables.Rule{
+			Table: table,
+			Chain: chains,
+			Exprs: []expr.Any{
+				// 匹配ip头部的目的ip字段
+				&expr.Payload{
+					OperationType:  expr.PayloadLoad,
+					Base:           expr.PayloadBaseNetworkHeader,
+					DestRegister:   1,
+					SourceRegister: 0,
+					Offset:         12,
+					Len:            4,
+				},
+				&expr.Lookup{
+					SourceRegister: 1,
+					DestRegister:   0,
+					SetID:          aSet.ID,
+				},
+				&expr.Immediate{
+					Register: 1,
+					Data:     []byte{0x32},
+				},
+				&expr.Meta{
+					Key:            3,
+					SourceRegister: true,
+					Register:       1,
+				},
+			},
+		}
+		rules = append(rules, rule)
+	}
+	// allow ip protocol
+	{
+		aSet := GetAnAnonymousSet(
+			n.GetTable(), nftables.TypeInetProto,
+		)
+		aSet.Interval = false
+		var elements = []nftables.SetElement{}
+
+		for _, protocol := range n.AllowProtocols {
+			element := nftables.SetElement{
+				Key: []byte{byte(protocol)},
+			}
+			elements = append(elements, element)
+		}
+		n.Conn.AddSet(aSet, elements)
+		rule := &nftables.Rule{
+			Table: table,
+			Chain: chains,
+			Exprs: []expr.Any{
+				// 匹配ip头部的目的ip字段
+				&expr.Payload{
+					OperationType:  expr.PayloadLoad,
+					Base:           expr.PayloadBaseNetworkHeader,
+					DestRegister:   1,
+					SourceRegister: 0,
+					Offset:         9,
+					Len:            1,
+				},
+				&expr.Lookup{
+					SourceRegister: 1,
+					DestRegister:   0,
+					SetID:          aSet.ID,
 				},
 				&expr.Immediate{
 					Register: 1,
@@ -507,6 +618,26 @@ func (n *MWan) LocalSysRules() error {
 	table := n.GetTable()
 	chains := n.GetLocalSysChain()
 	var rules []*nftables.Rule = make([]*nftables.Rule, 0)
+	// meta mark set 0x00000032
+	{
+		rule := &nftables.Rule{
+			Table: table,
+			Chain: chains,
+			Exprs: []expr.Any{
+				&expr.Immediate{
+					Register: 1,
+					Data:     []byte{0x32},
+				},
+				&expr.Meta{
+					Key:            3,
+					SourceRegister: true,
+					Register:       1,
+				},
+			},
+		}
+
+		rules = append(rules, rule)
+	}
 	// ct state {established,related} counter accept
 	{
 		aSet := GetAnAnonymousSet(
@@ -700,7 +831,6 @@ func (n *MWan) FilterRules() error {
 	table := n.GetTable()
 	chains := n.GetFilterChain()
 	wanifs := n.Interfaces.FindWans()
-	lanifs := n.Interfaces.FindLans()
 	sort.Sort(wanifs)
 	var rules []*nftables.Rule = make([]*nftables.Rule, 0)
 	// iif lo accept;
@@ -753,44 +883,187 @@ func (n *MWan) FilterRules() error {
 			rules = append(rules, rule)
 		}
 	}
-	// iifname eth5 ip daddr 192.168.2.0/24 jump local_sys;
+	//ip daddr 192.168.2.0/24 jump local_sys;
 	{
-		for _, lan := range lanifs {
-			Inf, err := net.InterfaceByName(lan.Name)
-			if err != nil {
-				continue
-			}
-			rule := &nftables.Rule{
-				Table: table,
-				Chain: chains,
-				Exprs: []expr.Any{
-					&expr.Meta{Key: 4, SourceRegister: false, Register: 1},
-					&expr.Cmp{
-						Op:       expr.CmpOpEq,
-						Register: 1,
-						Data:     binaryutil.PutInt32(int32(Inf.Index)),
-					},
-					&expr.Payload{
-						OperationType:  expr.PayloadLoad,
-						Base:           expr.PayloadBaseNetworkHeader,
-						DestRegister:   1,
-						SourceRegister: 0,
-						Offset:         16,
-						Len:            4,
-					},
-					&expr.Cmp{
-						Op:       expr.CmpOpEq,
-						Register: 1,
-						Data:     net.ParseIP(lan.IP.String()).To4(),
-					},
-					&expr.Verdict{
-						Kind:  expr.VerdictJump,
-						Chain: "mwan_local_sys",
-					},
+		aSet := GetAnAnonymousSet(
+			n.GetTable(), nftables.TypeIPAddr,
+		)
+		aSet.Interval = true
+		var elements = []nftables.SetElement{}
+		for _, lan := range n.Interfaces.FindLans() {
+			ipstr := ipMaskTOCRDI(net.IPNet{
+				IP:   lan.IP,
+				Mask: lan.Mask,
+			})
+			startIP, endIp, _ := GetStartAndEndIp(ipstr)
+			elements = append(elements, []nftables.SetElement{
+				{
+					Key: startIP.To4(),
 				},
-			}
-			rules = append(rules, rule)
+				{
+					Key:         incrementIP(endIp).To4(),
+					IntervalEnd: true,
+				},
+			}...)
 		}
+		for _, net := range n.OtherAllowNetworks {
+			ipstr := ipMaskTOCRDI(net)
+			startIP, endIp, _ := GetStartAndEndIp(ipstr)
+			elements = append(elements, []nftables.SetElement{
+				{
+					Key: startIP.To4(),
+				},
+				{
+					Key:         incrementIP(endIp).To4(),
+					IntervalEnd: true,
+				},
+			}...)
+		}
+		elements = append(elements, []nftables.SetElement{
+			{
+				Key:         []byte{0, 0, 0, 9},
+				IntervalEnd: true,
+			},
+		}...)
+		n.Conn.AddSet(aSet, elements)
+		rule := &nftables.Rule{
+			Table: table,
+			Chain: chains,
+			Exprs: []expr.Any{
+				// 匹配ip头部的目的ip字段
+				&expr.Payload{
+					OperationType:  expr.PayloadLoad,
+					Base:           expr.PayloadBaseNetworkHeader,
+					DestRegister:   1,
+					SourceRegister: 0,
+					Offset:         12,
+					Len:            4,
+				},
+				&expr.Lookup{
+					SourceRegister: 1,
+					DestRegister:   0,
+					SetID:          aSet.ID,
+				},
+				&expr.Verdict{
+					Kind:  expr.VerdictJump,
+					Chain: "mwan_local_sys",
+				},
+			},
+		}
+		rules = append(rules, rule)
+	}
+	{
+		aSet := GetAnAnonymousSet(
+			n.GetTable(), nftables.TypeIPAddr,
+		)
+		aSet.Interval = true
+		var elements = []nftables.SetElement{}
+		for _, lan := range n.Interfaces.FindLans() {
+			ipstr := ipMaskTOCRDI(net.IPNet{
+				IP:   lan.IP,
+				Mask: lan.Mask,
+			})
+			startIP, endIp, _ := GetStartAndEndIp(ipstr)
+			elements = append(elements, []nftables.SetElement{
+				{
+					Key: startIP.To4(),
+				},
+				{
+					Key:         incrementIP(endIp).To4(),
+					IntervalEnd: true,
+				},
+			}...)
+		}
+		for _, net := range n.OtherAllowNetworks {
+			ipstr := ipMaskTOCRDI(net)
+			startIP, endIp, _ := GetStartAndEndIp(ipstr)
+			elements = append(elements, []nftables.SetElement{
+				{
+					Key: startIP.To4(),
+				},
+				{
+					Key:         incrementIP(endIp).To4(),
+					IntervalEnd: true,
+				},
+			}...)
+		}
+		elements = append(elements, []nftables.SetElement{
+			{
+				Key:         []byte{0, 0, 0, 9},
+				IntervalEnd: true,
+			},
+		}...)
+		n.Conn.AddSet(aSet, elements)
+		rule := &nftables.Rule{
+			Table: table,
+			Chain: chains,
+			Exprs: []expr.Any{
+				// 匹配ip头部的目的ip字段
+				&expr.Payload{
+					OperationType:  expr.PayloadLoad,
+					Base:           expr.PayloadBaseNetworkHeader,
+					DestRegister:   1,
+					SourceRegister: 0,
+					Offset:         16,
+					Len:            4,
+				},
+				&expr.Lookup{
+					SourceRegister: 1,
+					DestRegister:   0,
+					SetID:          aSet.ID,
+				},
+				&expr.Verdict{
+					Kind:  expr.VerdictJump,
+					Chain: "mwan_local_sys",
+				},
+			},
+		}
+		rules = append(rules, rule)
+	}
+	{
+		aSet := GetAnAnonymousSet(
+			n.GetTable(), nftables.TypeInetProto,
+		)
+		aSet.Interval = false
+		var elements = []nftables.SetElement{}
+
+		for _, protocol := range n.AllowProtocols {
+			element := nftables.SetElement{
+				Key: []byte{byte(protocol)},
+			}
+			elements = append(elements, element)
+		}
+		n.Conn.AddSet(aSet, elements)
+		rule := &nftables.Rule{
+			Table: table,
+			Chain: chains,
+			Exprs: []expr.Any{
+				// 匹配ip头部的目的ip字段
+				&expr.Payload{
+					OperationType:  expr.PayloadLoad,
+					Base:           expr.PayloadBaseNetworkHeader,
+					DestRegister:   1,
+					SourceRegister: 0,
+					Offset:         9,
+					Len:            1,
+				},
+				&expr.Lookup{
+					SourceRegister: 1,
+					DestRegister:   0,
+					SetID:          aSet.ID,
+				},
+				&expr.Immediate{
+					Register: 1,
+					Data:     []byte{0x32},
+				},
+				&expr.Meta{
+					Key:            3,
+					SourceRegister: true,
+					Register:       1,
+				},
+			},
+		}
+		rules = append(rules, rule)
 	}
 	// meta mark set ct mark;
 	{
