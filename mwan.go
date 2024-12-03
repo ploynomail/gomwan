@@ -2,11 +2,13 @@ package gomwan
 
 import (
 	"context"
+	"log"
 	"net"
 	"sort"
 	"time"
 
 	"github.com/google/nftables"
+	"github.com/ti-mo/conntrack"
 )
 
 var MWanTableName = "mwan"
@@ -232,10 +234,19 @@ func (n *MWan) TicketMainTain(ctx context.Context) {
 				}
 				if weightChange {
 					n.TriggerChagne()
+
 				}
 			}
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+func (n *MWan) FlushConntrack() error {
+	c, err := conntrack.Dial(nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return c.Flush()
 }
