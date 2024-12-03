@@ -234,7 +234,7 @@ func (n *MWan) TicketMainTain(ctx context.Context) {
 				}
 				if weightChange {
 					n.TriggerChagne()
-
+					n.FlushConntrack()
 				}
 			}
 		case <-ctx.Done():
