@@ -22,22 +22,22 @@ func main() {
 				Primary:       true,
 			},
 			{
-				Name:          "eth3",
+				Name:          "eth2",
 				InitialWeight: 0.8,
 				InfType:       gomwan.WAN,
-				IP:            net.ParseIP("192.168.1.100"),
+				IP:            net.ParseIP("192.168.1.101"),
 				Mask:          net.CIDRMask(24, 32),
 				Gateway:       net.ParseIP("192.168.1.1"),
 				Primary:       false,
 			},
 			{
-				Name:    "eth5",
+				Name:    "eth3",
 				InfType: gomwan.LAN,
 				IP:      net.ParseIP("192.168.2.0"),
 				Mask:    net.CIDRMask(24, 32),
 			},
 		}, gomwan.AccessibilityPrimaryAndSecondary, []net.IP{
-			net.ParseIP("192.168.23.73"),
+			net.ParseIP("192.168.23.198"),
 		},
 		[]net.IPNet{
 			{

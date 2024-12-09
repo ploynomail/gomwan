@@ -224,7 +224,7 @@ func (n *MWan) TicketMainTain(ctx context.Context) {
 						ifs.InitialWeight = 0
 						primaryFail = true
 						weightChange = true
-					} else if ifs.Primary && result.MustBeReachableLost == 0 {
+					} else if ifs.Primary && primaryFail && result.MustBeReachableLost == 0 {
 						ifs.InitialWeight = 1
 						primaryFail = false
 						weightChange = true

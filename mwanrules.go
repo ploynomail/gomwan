@@ -883,7 +883,6 @@ func (n *MWan) FilterRules() error {
 			rules = append(rules, rule)
 		}
 	}
-	//ip daddr 192.168.2.0/24 jump local_sys;
 	{
 		aSet := GetAnAnonymousSet(
 			n.GetTable(), nftables.TypeIPAddr,
@@ -926,6 +925,31 @@ func (n *MWan) FilterRules() error {
 			},
 		}...)
 		n.Conn.AddSet(aSet, elements)
+		bSet := GetAnAnonymousSet(
+			n.GetTable(), nftables.TypeIPAddr,
+		)
+		bSet.Interval = true
+		var bElements = []nftables.SetElement{}
+		var internalIps = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"}
+		for _, ipstr := range internalIps {
+			startIP, endIp, _ := GetStartAndEndIp(ipstr)
+			bElements = append(bElements, []nftables.SetElement{
+				{
+					Key: startIP.To4(),
+				},
+				{
+					Key:         incrementIP(endIp).To4(),
+					IntervalEnd: true,
+				},
+			}...)
+		}
+		bElements = append(bElements, []nftables.SetElement{
+			{
+				Key:         []byte{0, 0, 0, 9},
+				IntervalEnd: true,
+			},
+		}...)
+		n.Conn.AddSet(bSet, bElements)
 		rule := &nftables.Rule{
 			Table: table,
 			Chain: chains,
@@ -944,6 +968,19 @@ func (n *MWan) FilterRules() error {
 					DestRegister:   0,
 					SetID:          aSet.ID,
 				},
+				&expr.Payload{
+					OperationType:  expr.PayloadLoad,
+					Base:           expr.PayloadBaseNetworkHeader,
+					DestRegister:   2,
+					SourceRegister: 0,
+					Offset:         16,
+					Len:            4,
+				},
+				&expr.Lookup{
+					SourceRegister: 2,
+					DestRegister:   0,
+					SetID:          bSet.ID,
+				},
 				&expr.Verdict{
 					Kind:  expr.VerdictJump,
 					Chain: "mwan_local_sys",
@@ -953,64 +990,16 @@ func (n *MWan) FilterRules() error {
 		rules = append(rules, rule)
 	}
 	{
-		aSet := GetAnAnonymousSet(
-			n.GetTable(), nftables.TypeIPAddr,
-		)
-		aSet.Interval = true
-		var elements = []nftables.SetElement{}
-		for _, lan := range n.Interfaces.FindLans() {
-			ipstr := ipMaskTOCRDI(net.IPNet{
-				IP:   lan.IP,
-				Mask: lan.Mask,
-			})
-			startIP, endIp, _ := GetStartAndEndIp(ipstr)
-			elements = append(elements, []nftables.SetElement{
-				{
-					Key: startIP.To4(),
-				},
-				{
-					Key:         incrementIP(endIp).To4(),
-					IntervalEnd: true,
-				},
-			}...)
-		}
-		for _, net := range n.OtherAllowNetworks {
-			ipstr := ipMaskTOCRDI(net)
-			startIP, endIp, _ := GetStartAndEndIp(ipstr)
-			elements = append(elements, []nftables.SetElement{
-				{
-					Key: startIP.To4(),
-				},
-				{
-					Key:         incrementIP(endIp).To4(),
-					IntervalEnd: true,
-				},
-			}...)
-		}
-		elements = append(elements, []nftables.SetElement{
-			{
-				Key:         []byte{0, 0, 0, 9},
-				IntervalEnd: true,
-			},
-		}...)
-		n.Conn.AddSet(aSet, elements)
+
 		rule := &nftables.Rule{
 			Table: table,
 			Chain: chains,
 			Exprs: []expr.Any{
-				// 匹配ip头部的目的ip字段
-				&expr.Payload{
-					OperationType:  expr.PayloadLoad,
-					Base:           expr.PayloadBaseNetworkHeader,
-					DestRegister:   1,
-					SourceRegister: 0,
-					Offset:         16,
-					Len:            4,
-				},
-				&expr.Lookup{
-					SourceRegister: 1,
-					DestRegister:   0,
-					SetID:          aSet.ID,
+				&expr.Meta{Key: expr.MetaKeyIIFNAME, SourceRegister: false, Register: 1},
+				&expr.Cmp{
+					Op:       expr.CmpOpEq,
+					Register: 1,
+					Data:     binaryutil.PutString("ipsec"),
 				},
 				&expr.Verdict{
 					Kind:  expr.VerdictJump,
