@@ -217,6 +217,9 @@ func (n *MWan) TicketMainTain(ctx context.Context) {
 				results := reachabilityCheck.IsReachable()
 				for _, result := range results {
 					ifs := n.Interfaces.FindByName(result.InfName)
+					if ifs == nil {
+						continue
+					}
 					if ifs.Primary && result.MustBeReachableLost > 0 {
 						ifs.InitialWeight = 0
 						primaryFail = true
